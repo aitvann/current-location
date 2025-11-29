@@ -58,6 +58,7 @@ impl<'a, T, N> Copy for WalkerNode<'a, T, N> {}
 #[derive(Clone, Debug)]
 pub struct Walker<'a, T, N: Node<T>> {
     ctx: &'a N::Context,
+    // A "workhorse" collection: https://nnethercote.github.io/perf-book/heap-allocations.html#reusing-collections
     heap: VecDeque<WalkerNode<'a, T, N>>,
     _data: PhantomData<T>,
 }
@@ -74,6 +75,17 @@ impl<'a, T, N: Node<T>> Walker<'a, T, N> {
         Self {
             ctx,
             heap: iter::once(WalkerNode::root(root)).collect(),
+            _data: PhantomData,
+        }
+    }
+
+    pub fn with_capacity(root: &'a N, ctx: &'a N::Context, capacity: usize) -> Self {
+        let mut heap = VecDeque::with_capacity(capacity);
+        heap.push_front(WalkerNode::root(root));
+
+        Self {
+            ctx,
+            heap,
             _data: PhantomData,
         }
     }

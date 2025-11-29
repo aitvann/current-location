@@ -19,10 +19,22 @@ mod process;
 mod walk;
 
 const KNOWN_PROCS: &[&str] = &["zsh", "nvim"];
+const BSF_HEAP_CAPACITY: usize = 1024;
 static LOCATIONS_PATH: LazyLock<&Path> = LazyLock::new(|| Path::new("/tmp/current-location/"));
 
 #[derive(Parser)]
+#[command(version)]
 struct Opts {
+    /// Provides active pid which skips requesting it from window manager.
+    ///
+    /// Use it if your window namages is not supported
+    #[arg(short, long, env = "CURRENT_LOCATION_ACTIVE_PID")]
+    active_pid: Option<Pid>,
+    /// Overrides active pid provided by window manager (one will by requested anyway)
+    ///
+    /// Use it for testing or banchmarking purposes
+    #[arg(short, long, env = "CURRENT_LOCATION_OVERRIDE_ACTIVE_PID")]
+    override_active_pid: Option<Pid>,
     #[clap(subcommand)]
     subcommand: Subcommands,
 }
@@ -103,23 +115,37 @@ fn build_path(pid: Pid, name: &str) -> PathBuf {
     LOCATIONS_PATH.join(filename)
 }
 
-async fn get_location_path() -> anyhow::Result<PathBuf> {
-    let active_pid_fut = tokio::spawn(Client::get_active_async());
+async fn get_location_path(opts: &Opts) -> anyhow::Result<PathBuf> {
+    let active_pid_fut = if opts.active_pid.is_none() {
+        tokio::spawn(Client::get_active_async()).into()
+    } else {
+        None
+    };
 
     let refresh = RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing());
     let sys = System::new_with_specifics(refresh);
     let processes = process::build_process_tree(&sys);
 
-    let active_pid = active_pid_fut
-        .await
-        .context("join failed")?
-        .context("failed to get active client")?
-        .context("no active client")?
-        .pid as u32;
-    let active_pid = Pid::from_u32(active_pid);
+    let mut active_pid = if let Some(active_pid) = opts.active_pid {
+        active_pid
+    } else {
+        let active_pid = active_pid_fut
+            .expect("fut is present if active_pid is None")
+            .await
+            .context("join failed")?
+            .context("failed to get active client")?
+            .context("no active client")?
+            .pid as u32;
+
+        Pid::from_u32(active_pid)
+    };
+
+    if let Some(override_active_pid) = opts.override_active_pid {
+        active_pid = override_active_pid;
+    }
 
     let root = processes.get(&active_pid).context("process not found")?;
-    let mut walker = Walker::new(root, &processes);
+    let mut walker = Walker::with_capacity(root, &processes, BSF_HEAP_CAPACITY);
     let mut location_search = LocationSearch::new();
     _ = walker.bfs(|node| location_search.handle_node(node));
     let selected_proc = location_search.select();
@@ -137,8 +163,8 @@ async fn get_location_path() -> anyhow::Result<PathBuf> {
 }
 
 #[allow(dead_code)]
-async fn get_location() -> anyhow::Result<LocationData> {
-    let path = get_location_path().await?;
+async fn get_location(opts: &Opts) -> anyhow::Result<LocationData> {
+    let path = get_location_path(opts).await?;
     let file = File::open(path).context("open location file")?;
     // Blocking executor but it's fine here
     let data: LocationData =
@@ -188,7 +214,7 @@ async fn main() -> anyhow::Result<()> {
     match opts.subcommand {
         Subcommands::Get => println!(
             "{}",
-            get_location_path()
+            get_location_path(&opts)
                 .await
                 .context("get location path")?
                 .display()

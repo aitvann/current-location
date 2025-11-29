@@ -18,7 +18,7 @@
       }: let
         runtimeDeps = with pkgs; [];
         buildDeps = with pkgs; [];
-        devDeps = with pkgs; [];
+        devDeps = with pkgs; [cargo-flamegraph];
 
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         msrv = cargoToml.package.rust-version;

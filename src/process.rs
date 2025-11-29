@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
+use rustc_hash::FxBuildHasher;
 use sysinfo::Pid;
 
 use crate::walk::Node;
 
-pub type ProcessTree<'a> = HashMap<Pid, Process<'a>>;
+pub type ProcessTree<'a> = HashMap<Pid, Process<'a>, FxBuildHasher>;
 
 #[derive(Clone, Debug)]
 pub struct Process<'a> {
@@ -42,7 +43,9 @@ impl<'a> Node<&'a sysinfo::Process> for Process<'a> {
 }
 
 pub fn build_process_tree(sys: &sysinfo::System) -> ProcessTree<'_> {
-    let mut processes = ProcessTree::new();
+    // TODO: use lighter lib for reading `procfs` because we spend 50% of runtime
+    // parsting process start time (`u64::from_str`) without even using it
+    let mut processes = ProcessTree::with_capacity_and_hasher(sys.processes().len(), FxBuildHasher);
     for (&pid, process) in sys.processes() {
         processes.entry(pid).or_insert(Process::new(process));
 
