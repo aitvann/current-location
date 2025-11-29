@@ -27,15 +27,19 @@ struct Opts {
     subcommand: Subcommands,
 }
 
+/// A tool that help to determine Current Working File of currently active window
 #[derive(Subcommand, Clone)]
 enum Subcommands {
+    /// Get location of currently active window
     Get,
+    /// Write location of a specific program to Location Registry
     Write {
         name: String,
         pid: Pid,
         location: PathBuf,
         nvim_pipe: Option<Pid>,
     },
+    /// Clear Location Registry
     Clear,
 }
 
