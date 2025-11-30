@@ -64,11 +64,7 @@ impl<'a> LocationSearch<'a> {
             );
         }
 
-        let known = KNOWN_PROCS
-            .iter()
-            .any(|&name| name == node.inner.data().name);
-
-        if known {
+        if KNOWN_PROCS.contains(&node.inner.data().name.as_str()) {
             self.known_procs.push(node.inner.data());
         }
 
