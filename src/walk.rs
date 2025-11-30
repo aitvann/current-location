@@ -2,7 +2,7 @@
 
 use std::{collections::VecDeque, iter, marker::PhantomData, ops::ControlFlow};
 
-pub trait Node<T> {
+pub trait Node<T: ?Sized> {
     type Context;
 
     fn data(&self) -> &T;

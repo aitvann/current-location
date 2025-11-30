@@ -1,5 +1,4 @@
 use std::fs::File;
-use std::io::Read;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -10,10 +9,8 @@ use clap::{Parser, Subcommand};
 use hyprland::data::Client;
 use hyprland::shared::HyprDataActiveOptional;
 use serde::{Deserialize, Serialize};
-use serde_with::{FromInto, serde_as};
-use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
 
-use crate::process::Process;
+use crate::process::{Pid, Process, ProcessInfo};
 use crate::walk::{ContinueFlow, Node, Walker, WalkerNode};
 
 mod process;
@@ -56,11 +53,9 @@ enum Subcommands {
     Clear,
 }
 
-#[serde_as]
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct LocationData {
     location: PathBuf,
-    #[serde_as(as = "Option<FromInto<usize>>")]
     nvim_pipe: Option<Pid>,
 }
 
@@ -75,7 +70,7 @@ impl LocationData {
 
 #[derive(Clone, Debug)]
 struct LocationSearch<'a> {
-    known_procs: Vec<&'a sysinfo::Process>,
+    known_procs: Vec<&'a ProcessInfo>,
 }
 
 impl<'a> LocationSearch<'a> {
@@ -87,25 +82,21 @@ impl<'a> LocationSearch<'a> {
 
     fn handle_node(
         &mut self,
-        node: WalkerNode<'a, &'a sysinfo::Process, Process<'a>>,
+        node: WalkerNode<'a, ProcessInfo, Process>,
     ) -> ControlFlow<Pid, ContinueFlow> {
         if cfg!(debug_assertions) {
             println!(
                 "{} - {} process({}): {:?}",
                 node.depth,
                 node.sibling_no,
-                node.inner.data().pid(),
-                node.inner.data().name()
+                node.inner.data().pid,
+                node.inner.data().name
             );
         }
 
-        let known = KNOWN_PROCS.iter().any(|&name| {
-            let Some(node_name) = node.inner.data().name().to_str() else {
-                return false;
-            };
-
-            name == node_name
-        });
+        let known = KNOWN_PROCS
+            .iter()
+            .any(|&name| name == node.inner.data().name);
 
         if known {
             self.known_procs.push(node.inner.data());
@@ -114,13 +105,12 @@ impl<'a> LocationSearch<'a> {
         ControlFlow::Continue(ContinueFlow::Forward)
     }
 
-    fn select(&self) -> Option<&'a sysinfo::Process> {
+    fn select(&self) -> Option<&'a ProcessInfo> {
         self.known_procs.last().copied()
     }
 }
 
 fn build_path(pid: Pid, name: &str) -> PathBuf {
-    let pid = pid.as_u32();
     let filename = format!("{name}-{pid}.txt");
     LOCATIONS_PATH.join(filename)
 }
@@ -132,22 +122,18 @@ async fn search_location(opts: &Opts) -> anyhow::Result<Option<PathBuf>> {
         None
     };
 
-    let refresh = RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing());
-    let sys = System::new_with_specifics(refresh);
-    let processes = process::build_process_tree(&sys);
+    let processes = process::build_process_tree().context("build processes tree")?;
 
     let mut active_pid = if let Some(active_pid) = opts.active_pid {
         active_pid
     } else {
-        let active_pid = active_pid_fut
+        active_pid_fut
             .expect("fut is present if active_pid is None")
             .await
             .context("join failed")?
             .context("failed to get active client")?
             .context("no active client")?
-            .pid as u32;
-
-        Pid::from_u32(active_pid)
+            .pid
     };
 
     if let Some(override_active_pid) = opts.override_active_pid {
@@ -164,27 +150,26 @@ async fn search_location(opts: &Opts) -> anyhow::Result<Option<PathBuf>> {
         return Ok(None);
     };
 
-    let proc_pid = selected_proc.pid();
-    let proc_name = selected_proc.name().to_str().context("invalid name")?;
-    let path = build_path(proc_pid, proc_name);
-
+    let path = build_path(selected_proc.pid, &selected_proc.name);
     Ok(path.into())
 }
 
-async fn get_location_raw(opts: &Opts) -> anyhow::Result<String> {
+async fn print_location(opts: &Opts) -> anyhow::Result<()> {
+    let stdout = io::stdout();
+    let mut stdout_lock = stdout.lock();
     let Some(path) = search_location(opts).await? else {
-        let fallback_data =
-            serde_json::to_string(&LocationData::fallback()).expect("does not fail");
-        return Ok(fallback_data);
+        serde_json::to_writer(stdout_lock, &LocationData::fallback())
+            .context("write fallback location data to stdout")?;
+
+        return Ok(());
     };
 
+    // should use `splice`
+    // https://doc.rust-lang.org/std/io/fn.copy.html#platform-specific-behavior
     let mut file = File::open(path).context("open location file")?;
-    // Blocking executor but it's fine here
-    let mut data_raw = "".to_string();
-    file.read_to_string(&mut data_raw)
-        .context("context read location file")?;
+    io::copy(&mut file, &mut stdout_lock).context("copy location file to stdout")?;
 
-    Ok(data_raw)
+    Ok(())
 }
 
 #[allow(dead_code)]
@@ -240,10 +225,7 @@ async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
 
     match opts.subcommand {
-        Subcommands::Get => println!(
-            "{}",
-            get_location_raw(&opts).await.context("get location data")?
-        ),
+        Subcommands::Get => print_location(&opts).await.context("get location data")?,
         Subcommands::Write {
             name,
             pid,

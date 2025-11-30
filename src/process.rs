@@ -1,61 +1,123 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map};
+use std::io::BufRead;
 
+use anyhow::Context;
+use itertools::Itertools;
 use rustc_hash::FxBuildHasher;
-use sysinfo::Pid;
 
 use crate::walk::Node;
 
-pub type ProcessTree<'a> = HashMap<Pid, Process<'a>, FxBuildHasher>;
+pub type Pid = i32;
+pub type ProcessTree = HashMap<Pid, Process, FxBuildHasher>;
+
+const PROCESS_TREE_CAPACITY: usize = 2048;
+
+#[derive(Default, Clone, Debug)]
+pub struct ProcessInfo {
+    pub pid: Pid,
+    pub name: String,
+}
+
+impl ProcessInfo {
+    pub fn new(pid: Pid, name: String) -> Self {
+        Self { pid, name }
+    }
+}
 
 #[derive(Clone, Debug)]
-pub struct Process<'a> {
-    process: &'a sysinfo::Process,
+pub struct Process {
+    info: ProcessInfo,
     children: Vec<Pid>,
 }
 
-impl<'a> Process<'a> {
-    pub fn new(process: &'a sysinfo::Process) -> Self {
+impl Process {
+    pub fn new(info: ProcessInfo) -> Self {
         Self {
-            process,
+            info,
             children: vec![],
         }
     }
 
-    pub fn new_with_children(process: &'a sysinfo::Process, children: Vec<Pid>) -> Self {
-        Self { process, children }
+    pub fn new_with_children(info: ProcessInfo, children: Vec<Pid>) -> Self {
+        Self { info, children }
     }
 }
 
-impl<'a> Node<&'a sysinfo::Process> for Process<'a> {
-    type Context = ProcessTree<'a>;
+impl Node<ProcessInfo> for Process {
+    type Context = ProcessTree;
 
-    fn data(&self) -> &&'a sysinfo::Process {
-        &self.process
+    fn data(&self) -> &ProcessInfo {
+        &self.info
     }
 
-    fn data_mut(&mut self) -> &mut &'a sysinfo::Process {
-        &mut self.process
+    fn data_mut(&mut self) -> &mut ProcessInfo {
+        &mut self.info
     }
 
-    fn children<'b>(&'b self, tree: &'b Self::Context) -> impl Iterator<Item = &'b Self> {
+    fn children<'a>(&'a self, tree: &'a Self::Context) -> impl Iterator<Item = &'a Self> {
         self.children.iter().filter_map(|pid| tree.get(pid))
     }
 }
 
-pub fn build_process_tree(sys: &sysinfo::System) -> ProcessTree<'_> {
-    // TODO: use lighter lib for reading `procfs` because we spend 50% of runtime
-    // parsting process start time (`u64::from_str`) without even using it
-    let mut processes = ProcessTree::with_capacity_and_hasher(sys.processes().len(), FxBuildHasher);
-    for (&pid, process) in sys.processes() {
-        processes.entry(pid).or_insert(Process::new(process));
+#[derive(Debug, Clone)]
+struct Status {
+    /// Command run by this process.
+    pub name: String,
+}
 
-        if let Some(parent) = process.parent().and_then(|ppid| sys.processes().get(&ppid)) {
-            processes
-                .entry(parent.pid())
-                .and_modify(|proc| proc.children.push(pid))
-                .or_insert(Process::new_with_children(parent, vec![pid]));
+impl procfs::FromBufRead for Status {
+    fn from_buf_read<R: BufRead>(mut reader: R) -> procfs::ProcResult<Self> {
+        let mut line = "".to_string();
+        while reader.read_line(&mut line)? != 0 {
+            let Some((name, value)) = line.split(':').next_tuple() else {
+                continue;
+            };
+
+            if name == "Name" {
+                let status = Status {
+                    name: value.trim().to_string(),
+                };
+
+                return Ok(status);
+            }
+
+            line.clear();
         }
+
+        let err = procfs::ProcError::NotFound(None);
+        Err(err)
+    }
+}
+
+pub fn build_process_tree() -> anyhow::Result<ProcessTree> {
+    let mut processes = ProcessTree::with_capacity_and_hasher(PROCESS_TREE_CAPACITY, FxBuildHasher);
+    for proc in procfs::process::all_processes().context("read /proc")? {
+        // Process could die by the time we come to it, it's normal
+        let Ok(proc) = proc else { continue };
+
+        let stat = proc.stat().context("read stat file")?;
+        let status = proc
+            .read::<_, Status>("status")
+            .context("read status file")?;
+        let info = ProcessInfo::new(proc.pid(), status.name);
+
+        match processes.entry(proc.pid()) {
+            hash_map::Entry::Occupied(mut e) => {
+                e.get_mut().info = info;
+            }
+            hash_map::Entry::Vacant(e) => {
+                e.insert(Process::new(info));
+            }
+        }
+
+        processes
+            .entry(stat.ppid)
+            .and_modify(|pproc| pproc.children.push(proc.pid()))
+            .or_insert(Process::new_with_children(
+                Default::default(),
+                vec![proc.pid],
+            ));
     }
 
-    processes
+    Ok(processes)
 }
