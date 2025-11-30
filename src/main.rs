@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::io::Read;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -63,6 +64,15 @@ struct LocationData {
     nvim_pipe: Option<Pid>,
 }
 
+impl LocationData {
+    fn fallback() -> Self {
+        Self {
+            location: env::home_dir().unwrap_or_else(|| PathBuf::from("/home/root/")),
+            nvim_pipe: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct LocationSearch<'a> {
     known_procs: Vec<&'a sysinfo::Process>,
@@ -115,7 +125,7 @@ fn build_path(pid: Pid, name: &str) -> PathBuf {
     LOCATIONS_PATH.join(filename)
 }
 
-async fn get_location_path(opts: &Opts) -> anyhow::Result<PathBuf> {
+async fn search_location(opts: &Opts) -> anyhow::Result<Option<PathBuf>> {
     let active_pid_fut = if opts.active_pid.is_none() {
         tokio::spawn(Client::get_active_async()).into()
     } else {
@@ -151,20 +161,38 @@ async fn get_location_path(opts: &Opts) -> anyhow::Result<PathBuf> {
     let selected_proc = location_search.select();
 
     let Some(selected_proc) = selected_proc else {
-        let fallback_path = env::home_dir().unwrap_or_else(|| PathBuf::from("/home/root/"));
-        return Ok(fallback_path);
+        return Ok(None);
     };
 
     let proc_pid = selected_proc.pid();
     let proc_name = selected_proc.name().to_str().context("invalid name")?;
     let path = build_path(proc_pid, proc_name);
 
-    Ok(path)
+    Ok(path.into())
+}
+
+async fn get_location_raw(opts: &Opts) -> anyhow::Result<String> {
+    let Some(path) = search_location(opts).await? else {
+        let fallback_data =
+            serde_json::to_string(&LocationData::fallback()).expect("does not fail");
+        return Ok(fallback_data);
+    };
+
+    let mut file = File::open(path).context("open location file")?;
+    // Blocking executor but it's fine here
+    let mut data_raw = "".to_string();
+    file.read_to_string(&mut data_raw)
+        .context("context read location file")?;
+
+    Ok(data_raw)
 }
 
 #[allow(dead_code)]
 async fn get_location(opts: &Opts) -> anyhow::Result<LocationData> {
-    let path = get_location_path(opts).await?;
+    let Some(path) = search_location(opts).await? else {
+        return Ok(LocationData::fallback());
+    };
+
     let file = File::open(path).context("open location file")?;
     // Blocking executor but it's fine here
     let data: LocationData =
@@ -214,10 +242,7 @@ async fn main() -> anyhow::Result<()> {
     match opts.subcommand {
         Subcommands::Get => println!(
             "{}",
-            get_location_path(&opts)
-                .await
-                .context("get location path")?
-                .display()
+            get_location_raw(&opts).await.context("get location data")?
         ),
         Subcommands::Write {
             name,
