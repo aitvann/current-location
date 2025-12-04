@@ -19,15 +19,15 @@
       }: let
         runtimeDeps = with pkgs; [];
         buildDeps = with pkgs; [];
-        devDeps = with pkgs; [cargo-flamegraph];
+        devDeps = with pkgs; [cargo-flamegraph heaptrack];
 
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         msrv = cargoToml.package.rust-version;
 
         rustPackage = features:
           (pkgs.makeRustPlatform {
-            cargo = pkgs.rust-bin.stable.latest.minimal;
-            rustc = pkgs.rust-bin.stable.latest.minimal;
+            cargo = pkgs.rust-bin.nightly.latest.minimal;
+            rustc = pkgs.rust-bin.nightly.latest.minimal;
           }).buildRustPackage {
             inherit (cargoToml.package) name version;
             src = ./.;
@@ -61,7 +61,7 @@
         devShells.msrv = mkDevShell pkgs.rust-bin.stable.${msrv}.default;
 
         packages.default = self'.packages.current-location;
-        devShells.default = self'.devShells.stable;
+        devShells.default = self'.devShells.nightly;
       };
     };
 }

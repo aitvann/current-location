@@ -2,9 +2,9 @@ use std::collections::{HashMap, hash_map};
 use std::io::BufRead;
 
 use anyhow::Context;
-use itertools::Itertools;
 use rustc_hash::FxBuildHasher;
 
+use crate::tosubstr::ToSubStr;
 use crate::walk::Node;
 
 pub type Pid = i32;
@@ -69,19 +69,15 @@ impl procfs::FromBufRead for Status {
     fn from_buf_read<R: BufRead>(mut reader: R) -> procfs::ProcResult<Self> {
         let mut line = "".to_string();
         while reader.read_line(&mut line)? != 0 {
-            let Some((name, value)) = line.split(':').next_tuple() else {
+            let Some(name) = line.strip_prefix("Name:") else {
+                line.clear();
                 continue;
             };
 
-            if name == "Name" {
-                let status = Status {
-                    name: value.trim().to_string(),
-                };
-
-                return Ok(status);
-            }
-
-            line.clear();
+            let range = line.substr_range(name.trim()).expect("name is within line");
+            line.to_substr(range);
+            let status = Status { name: line };
+            return Ok(status);
         }
 
         let err = procfs::ProcError::NotFound(None);

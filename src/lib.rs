@@ -1,22 +1,20 @@
-use std::{
-    env,
-    fs::{self, File},
-    io,
-    ops::ControlFlow,
-    path::{Path, PathBuf},
-    sync::LazyLock,
-};
+#![feature(substr_range)]
+#![feature(slice_range)]
+
+use std::fs::{self, File};
+use std::ops::ControlFlow;
+use std::path::{Path, PathBuf};
+use std::{env, io, sync::LazyLock};
 
 use anyhow::Context;
 use hyprland::{data::Client, shared::HyprDataActiveOptional};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    process::{Pid, Process, ProcessInfo},
-    walk::{ContinueFlow, Node, Walker, WalkerNode},
-};
+use crate::process::{Pid, Process, ProcessInfo};
+use crate::walk::{ContinueFlow, Node, Walker, WalkerNode};
 
 pub mod process;
+pub mod tosubstr;
 pub mod walk;
 
 const KNOWN_PROCS: &[&str] = &["zsh", "nvim"];
