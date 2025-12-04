@@ -110,6 +110,11 @@ pub fn build_process_tree() -> anyhow::Result<ProcessTree> {
             }
         }
 
+        // skipping root process because it's `children` vec is going to be huge and useless
+        if stat.ppid == 1 {
+            continue;
+        }
+
         processes
             .entry(stat.ppid)
             .and_modify(|pproc| pproc.children.push(proc.pid()))
