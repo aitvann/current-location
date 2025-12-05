@@ -91,13 +91,16 @@ pub async fn search(active_pid: Option<Pid>) -> anyhow::Result<Option<PathBuf>> 
     let active_pid = if let Some(active_pid) = active_pid {
         active_pid
     } else {
-        active_pid_fut
+        let Some(active_client) = active_pid_fut
             .expect("fut is present if active_pid is None")
             .await
             .context("join failed")?
             .context("failed to get active client")?
-            .context("no active client")?
-            .pid
+        else {
+            return Ok(None);
+        };
+
+        active_client.pid
     };
 
     let root = processes.get(&active_pid).context("process not found")?;
