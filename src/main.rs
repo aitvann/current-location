@@ -31,7 +31,7 @@ enum Subcommands {
         #[clap(required = true)]
         pids: Vec<Pid>,
         #[clap(long)]
-        nvim_pipe: Option<Pid>,
+        nvim_pipe: Option<String>,
     },
     /// Clear Location Registry
     Clear,

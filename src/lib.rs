@@ -27,7 +27,7 @@ static LOCATIONS_PATH: LazyLock<PathBuf> =
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LocationData {
     location: PathBuf,
-    nvim_pipe: Option<Pid>,
+    nvim_pipe: Option<String>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     fallback: Option<bool>,
@@ -146,7 +146,7 @@ pub fn write(
     name: String,
     pids: Vec<Pid>,
     location: PathBuf,
-    nvim_pipe: Option<Pid>,
+    nvim_pipe: Option<String>,
 ) -> anyhow::Result<()> {
     let data = LocationData {
         location,
