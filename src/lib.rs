@@ -144,7 +144,7 @@ pub async fn get(active_pid: Option<Pid>) -> anyhow::Result<LocationData> {
 
 pub fn write(
     name: String,
-    pid: Pid,
+    pids: Vec<Pid>,
     location: PathBuf,
     nvim_pipe: Option<Pid>,
 ) -> anyhow::Result<()> {
@@ -158,20 +158,22 @@ pub fn write(
     fs::set_permissions(LOCATIONS_PATH.as_path(), fs::Permissions::from_mode(0o700))
         .context("set permissions for location registry")?;
 
-    let path = build_path(pid, &name);
-    let file = File::options()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(path)
-        .context("open location file")?;
-    file.metadata()
-        .context("access file's metadata")?
-        .permissions()
-        .set_mode(0o600);
+    for pid in pids {
+        let path = build_path(pid, &name);
+        let file = File::options()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(path)
+            .context("open location file")?;
+        file.metadata()
+            .context("access file's metadata")?
+            .permissions()
+            .set_mode(0o600);
 
-    // Blocking executor but it's fine here
-    serde_json::to_writer(file, &data).context("serialize + parse to file")?;
+        // Blocking executor but it's fine here
+        serde_json::to_writer(file, &data).context("serialize + parse to file")?;
+    }
 
     Ok(())
 }

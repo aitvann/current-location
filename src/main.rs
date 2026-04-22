@@ -27,8 +27,10 @@ enum Subcommands {
     /// Write location of a specific program to Location Registry
     Write {
         name: String,
-        pid: Pid,
         location: PathBuf,
+        #[clap(required = true)]
+        pids: Vec<Pid>,
+        #[clap(long)]
         nvim_pipe: Option<Pid>,
     },
     /// Clear Location Registry
@@ -70,10 +72,10 @@ async fn main() -> anyhow::Result<()> {
             .context("get location data")?,
         Subcommands::Write {
             name,
-            pid,
+            pids,
             location,
             nvim_pipe,
-        } => current_location::write(name, pid, location, nvim_pipe).context("write location")?,
+        } => current_location::write(name, pids, location, nvim_pipe).context("write location")?,
         Subcommands::Clear => current_location::clear().context("clear location")?,
     }
 
