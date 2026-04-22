@@ -4,7 +4,8 @@
 use std::env;
 use std::fs::{self, File};
 use std::ops::ControlFlow;
-use std::path::{Path, PathBuf};
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 use std::{io, sync::LazyLock};
 
 use anyhow::{Context, anyhow};
@@ -20,7 +21,8 @@ pub mod walk;
 
 const KNOWN_PROCS: &[&str] = &["zsh", "nvim"];
 const BFS_HEAP_CAPACITY: usize = 1024;
-static LOCATIONS_PATH: LazyLock<&Path> = LazyLock::new(|| Path::new("/tmp/current-location/"));
+static LOCATIONS_PATH: LazyLock<PathBuf> =
+    LazyLock::new(|| PathBuf::from(format!("/tmp/current-location-{}", nix::unistd::geteuid())));
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LocationData {
@@ -152,7 +154,10 @@ pub fn write(
         fallback: None,
     };
 
-    fs::create_dir_all(*LOCATIONS_PATH).context("create location dir")?;
+    fs::create_dir_all(LOCATIONS_PATH.as_path()).context("create location dir")?;
+    fs::set_permissions(LOCATIONS_PATH.as_path(), fs::Permissions::from_mode(0o700))
+        .context("set permissions for location registry")?;
+
     let path = build_path(pid, &name);
     let file = File::options()
         .write(true)
@@ -160,6 +165,10 @@ pub fn write(
         .create(true)
         .open(path)
         .context("open location file")?;
+    file.metadata()
+        .context("access file's metadata")?
+        .permissions()
+        .set_mode(0o600);
 
     // Blocking executor but it's fine here
     serde_json::to_writer(file, &data).context("serialize + parse to file")?;
@@ -168,7 +177,7 @@ pub fn write(
 }
 
 pub fn clear() -> anyhow::Result<()> {
-    match fs::remove_dir_all(*LOCATIONS_PATH) {
+    match fs::remove_dir_all(LOCATIONS_PATH.as_path()) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e.into()),

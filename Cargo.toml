@@ -9,6 +9,7 @@ anyhow = "1.0.100"
 clap = { version = "4.5.53", features = ["derive", "env"] }
 hyprland = "0.4.0-beta.3"
 itertools = "0.14.0"
+nix = { version = "0.31.2", features = ["user"] }
 procfs = "0.18.0"
 rustc-hash = "2.1.1"
 serde = "1.0.228"
