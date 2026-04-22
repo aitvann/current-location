@@ -1,10 +1,11 @@
 #![feature(substr_range)]
 #![feature(slice_range)]
 
+use std::env;
 use std::fs::{self, File};
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
-use std::{env, io, sync::LazyLock};
+use std::{io, sync::LazyLock};
 
 use anyhow::Context;
 use hyprland::{data::Client, shared::HyprDataActiveOptional};
@@ -18,13 +19,16 @@ pub mod tosubstr;
 pub mod walk;
 
 const KNOWN_PROCS: &[&str] = &["zsh", "nvim"];
-const BSF_HEAP_CAPACITY: usize = 1024;
+const BFS_HEAP_CAPACITY: usize = 1024;
 static LOCATIONS_PATH: LazyLock<&Path> = LazyLock::new(|| Path::new("/tmp/current-location/"));
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LocationData {
     location: PathBuf,
     nvim_pipe: Option<Pid>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fallback: Option<bool>,
 }
 
 impl LocationData {
@@ -32,6 +36,7 @@ impl LocationData {
         Self {
             location: env::home_dir().unwrap_or_else(|| PathBuf::from("/home/root/")),
             nvim_pipe: None,
+            fallback: true.into(),
         }
     }
 }
@@ -104,7 +109,7 @@ pub async fn search(active_pid: Option<Pid>) -> anyhow::Result<Option<PathBuf>> 
     };
 
     let root = processes.get(&active_pid).context("process not found")?;
-    let mut walker = Walker::with_capacity(root, &processes, BSF_HEAP_CAPACITY);
+    let mut walker = Walker::with_capacity(root, &processes, BFS_HEAP_CAPACITY);
     let mut location_search = LocationSearch::new();
     _ = walker.bfs(|node| location_search.handle_node(node));
     let selected_proc = location_search.select();
@@ -139,6 +144,7 @@ pub fn write(
     let data = LocationData {
         location,
         nvim_pipe,
+        fallback: None,
     };
 
     fs::create_dir_all(*LOCATIONS_PATH).context("create location dir")?;

@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use current_location::LocationData;
-use current_location::process::Pid;
+
+use current_location::{LocationData, process::Pid};
 
 #[derive(Parser)]
 #[command(version)]
