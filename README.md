@@ -1,7 +1,6 @@
 # Current Location
 
-A tool that help to determine Current Working File of currently active window which goes beyond
-just looking up CWD of a process
+A tool that helps to determine the Current Working File of the currently active window.
 
 Supported window managers:
 
