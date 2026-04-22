@@ -7,7 +7,7 @@ use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::{io, sync::LazyLock};
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use hyprland::{data::Client, shared::HyprDataActiveOptional};
 use serde::{Deserialize, Serialize};
 
@@ -128,7 +128,12 @@ pub async fn get(active_pid: Option<Pid>) -> anyhow::Result<LocationData> {
         return Ok(LocationData::fallback());
     };
 
-    let file = File::open(path).context("open location file")?;
+    let file = match File::open(path) {
+        Ok(file) => file,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(LocationData::fallback()),
+        Err(err) => return Err(anyhow!(err).context("open location file")),
+    };
+
     // Blocking executor but it's fine here
     let data: LocationData =
         serde_json::from_reader(file).context("deserialize + write to file")?;

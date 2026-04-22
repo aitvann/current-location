@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io;
 use std::path::PathBuf;
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use clap::{Parser, Subcommand};
 
 use current_location::{LocationData, process::Pid};
@@ -39,15 +39,21 @@ async fn print_location(active_pid: Option<Pid>) -> anyhow::Result<()> {
     let stdout = io::stdout();
     let mut stdout_lock = stdout.lock();
     let Some(path) = current_location::search(active_pid).await? else {
-        serde_json::to_writer(stdout_lock, &LocationData::fallback())
-            .context("write fallback location data to stdout")?;
-
-        return Ok(());
+        return serde_json::to_writer(stdout_lock, &LocationData::fallback())
+            .context("write fallback location data to stdout");
     };
 
     // should use `splice`
     // https://doc.rust-lang.org/std/io/fn.copy.html#platform-specific-behavior
-    let mut file = File::open(path).context("open location file")?;
+    let mut file = match File::open(path) {
+        Ok(file) => file,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            return serde_json::to_writer(stdout_lock, &LocationData::fallback())
+                .context("write fallback location data to stdout");
+        }
+        Err(err) => return Err(anyhow!(err).context("open location file")),
+    };
+
     io::copy(&mut file, &mut stdout_lock).context("copy location file to stdout")?;
 
     Ok(())
