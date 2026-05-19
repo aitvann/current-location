@@ -24,10 +24,15 @@
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         msrv = cargoToml.package.rust-version;
 
+        toolchainFilePath = ./rust-toolchain.toml;
+        # Legacy variant
+        # toolchainFilePath = ./rust-toolchain;
+        pinnedToolchain = pkgs.rust-bin.fromRustupToolchainFile toolchainFilePath;
+
         rustPackage = features:
           (pkgs.makeRustPlatform {
-            cargo = pkgs.rust-bin.nightly.latest.minimal;
-            rustc = pkgs.rust-bin.nightly.latest.minimal;
+            cargo = pkgs.rust-bin.stable.latest.minimal;
+            rustc = pkgs.rust-bin.stable.latest.minimal;
           }).buildRustPackage {
             inherit (cargoToml.package) name version;
             src = ./.;
@@ -40,11 +45,23 @@
             # doCheck = false;
           };
 
-        mkDevShell = rustc:
+        mkToolchain = toolchain: (toolchain.override {
+          extensions = [
+            "rust-src"
+            "rustfmt"
+            "rust-analyzer"
+            "clippy"
+          ];
+        });
+
+        mkDevShell = toolchain:
           pkgs.mkShell {
-            RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
+            RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
             buildInputs = runtimeDeps;
-            nativeBuildInputs = buildDeps ++ devDeps ++ [rustc];
+            nativeBuildInputs =
+              buildDeps
+              ++ devDeps
+              ++ [(mkToolchain toolchain)];
           };
       in {
         _module.args.pkgs = import inputs.nixpkgs {
@@ -52,16 +69,16 @@
           overlays = [(import inputs.rust-overlay)];
         };
 
-        packages.current-location = rustPackage "";
+        packages."${cargoToml.package.name}" = rustPackage "";
 
-        devShells.nightly =
-          mkDevShell (pkgs.rust-bin.selectLatestNightlyWith
-            (toolchain: toolchain.default));
-        devShells.stable = mkDevShell pkgs.rust-bin.stable.latest.default;
+        devShells.nightly-latest =
+          mkDevShell (pkgs.rust-bin.selectLatestNightlyWith mkToolchain);
+        devShells.stable-latest = mkDevShell pkgs.rust-bin.stable.latest.default;
         devShells.msrv = mkDevShell pkgs.rust-bin.stable.${msrv}.default;
+        devShells.pinned = mkDevShell pinnedToolchain;
 
-        packages.default = self'.packages.current-location;
-        devShells.default = self'.devShells.nightly;
+        packages.default = self'.packages."${cargoToml.package.name}";
+        devShells.default = self'.devShells.pinned;
       };
     };
 }
