@@ -19,8 +19,8 @@ tokio = { version = "1.48.0" }
 
 # improve runtime performance at cost of compile time and bin size
 [profile.release]
-codegen-units = 1
 lto = "fat"
+codegen-units = 1
 
 [profile.profiling]
 inherits = "release"

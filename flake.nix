@@ -19,7 +19,17 @@
       }: let
         runtimeDeps = with pkgs; [];
         buildDeps = with pkgs; [];
-        devDeps = with pkgs; [cargo-flamegraph heaptrack];
+        devDeps = with pkgs; [
+          # Tools
+          cargo-flamegraph
+          heaptrack
+
+          # Editor tools
+          tombi
+
+          nixd
+          alejandra
+        ];
 
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         msrv = cargoToml.package.rust-version;
