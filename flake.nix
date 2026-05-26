@@ -27,6 +27,8 @@
           # Editor tools
           tombi
 
+          codebook
+
           nixd
           alejandra
         ];

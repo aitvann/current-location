@@ -12,7 +12,7 @@ use current_location::{LocationData, process::Pid};
 struct Opts {
     /// Provides active pid which skips requesting it from window manager.
     ///
-    /// Use it if your window namages is not supported
+    /// Use it if your window manager is not supported
     #[arg(short, long, env = "CURRENT_LOCATION_ACTIVE_PID")]
     active_pid: Option<Pid>,
     #[clap(subcommand)]
