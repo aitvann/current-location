@@ -29,6 +29,11 @@
 
           codebook
 
+          marksman
+          efm-langserver
+          pandoc
+          markdownlint-cli2
+
           nixd
           alejandra
         ];
