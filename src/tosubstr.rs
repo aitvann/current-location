@@ -30,3 +30,52 @@ impl ToSubStr for String {
         };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::tosubstr::ToSubStr;
+
+    #[test]
+    fn empty() {
+        let mut src = "".to_string();
+        src.to_substr(..);
+        assert_eq!(src, "");
+    }
+
+    #[test]
+    #[should_panic]
+    fn utf8_split() {
+        let mut src = "key: 💣".to_string();
+        src.to_substr(..6);
+    }
+
+    #[test]
+    fn end() {
+        let mut src = "key: value".to_string();
+
+        src.to_substr(5..);
+
+        let expected = "value";
+        assert_eq!(src, expected);
+    }
+
+    #[test]
+    fn middle() {
+        let mut src = r#""key": "value""#.to_string();
+
+        src.to_substr(8..13);
+
+        let expected = "value";
+        assert_eq!(src, expected);
+    }
+
+    #[test]
+    fn start() {
+        let mut src = r#"key: "value""#.to_string();
+
+        src.to_substr(0..3);
+
+        let expected = "key";
+        assert_eq!(src, expected);
+    }
+}
