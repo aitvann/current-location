@@ -48,8 +48,8 @@
 
         rustPackage = features:
           (pkgs.makeRustPlatform {
-            cargo = pkgs.rust-bin.stable.latest.minimal;
-            rustc = pkgs.rust-bin.stable.latest.minimal;
+            cargo = pkgs.rust-bin.nightly.latest.minimal;
+            rustc = pkgs.rust-bin.nightly.latest.minimal;
           }).buildRustPackage {
             inherit (cargoToml.package) name version;
             src = ./.;
